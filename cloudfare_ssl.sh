@@ -54,7 +54,7 @@ ACME_SH="/root/.acme.sh/acme.sh"
 if [ ! -f "$ACME_SH" ]; then
     log "正在安装 acme.sh..." "${BLUE}"
     curl https://get.acme.sh | sh -s email=$CF_Email
-    sleep 5
+    sleep 5  # 等待 acme.sh 安装完成
 fi
 
 # 确保 acme.sh 可用
@@ -79,24 +79,35 @@ if [ -z "$ZONE_ID" ]; then
     exit 1
 fi
 
-# 获取服务器 IP
-SERVER_IP=$(curl -s ifconfig.me)
-log "服务器 IP: $SERVER_IP" "${GREEN}"
-
-# 创建或更新 A 记录
-log "正在创建或更新 A 记录..." "${BLUE}"
-RECORD_RESPONSE=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+# 检查二级域名是否已存在
+log "正在检查二级域名..." "${BLUE}"
+RECORD_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$FULL_DOMAIN" \
      -H "X-Auth-Email: $CF_Email" \
      -H "X-Auth-Key: $CF_Key" \
-     -H "Content-Type: application/json" \
-     --data "{\"type\":\"A\",\"name\":\"$FULL_DOMAIN\",\"content\":\"$SERVER_IP\",\"ttl\":1,\"proxied\":false}")
+     -H "Content-Type: application/json" | jq -r '.result[0].id')
 
-if echo "$RECORD_RESPONSE" | jq -e '.success' &>/dev/null; then
-    log "A 记录创建或更新成功" "${GREEN}"
+if [ -z "$RECORD_ID" ]; then
+    # 获取服务器 IP
+    SERVER_IP=$(curl -s ifconfig.me)
+    log "服务器 IP: $SERVER_IP" "${GREEN}"
+
+    # 创建 A 记录
+    log "正在创建 A 记录..." "${BLUE}"
+    RECORD_RESPONSE=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+         -H "X-Auth-Email: $CF_Email" \
+         -H "X-Auth-Key: $CF_Key" \
+         -H "Content-Type: application/json" \
+         --data "{\"type\":\"A\",\"name\":\"$FULL_DOMAIN\",\"content\":\"$SERVER_IP\",\"ttl\":1,\"proxied\":false}")
+
+    if echo "$RECORD_RESPONSE" | jq -e '.success' &>/dev/null; then
+        log "A 记录创建成功" "${GREEN}"
+    else
+        log "A 记录创建失败。错误信息：" "${RED}"
+        echo "$RECORD_RESPONSE" | jq '.errors'
+        exit 1
+    fi
 else
-    log "A 记录创建或更新失败。错误信息：" "${RED}"
-    echo "$RECORD_RESPONSE" | jq '.errors'
-    exit 1
+    log "二级域名 $FULL_DOMAIN 已存在，跳过 A 记录创建" "${YELLOW}"
 fi
 
 # 生成证书
