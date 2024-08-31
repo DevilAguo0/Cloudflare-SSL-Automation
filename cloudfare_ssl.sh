@@ -110,9 +110,34 @@ else
     log "二级域名 $FULL_DOMAIN 已存在，跳过 A 记录创建" "${YELLOW}"
 fi
 
+# 检查证书是否存在并询问是否强制更新
+CERT_FILE="/root/.acme.sh/${FULL_DOMAIN}_ecc/${FULL_DOMAIN}.cer"
+if [ -f "$CERT_FILE" ]; then
+    CERT_EXPIRE=$(openssl x509 -noout -enddate -in "$CERT_FILE" | cut -d= -f2)
+    log "发现已存在的证书，到期时间: $CERT_EXPIRE" "${YELLOW}"
+    read -p "$(echo -e ${YELLOW}"是否强制更新证书？(y/n): "${NC})" FORCE_RENEW
+    if [[ $FORCE_RENEW =~ ^[Yy]$ ]]; then
+        ACME_FORCE="--force"
+    else
+        log "跳过证书更新。" "${BLUE}"
+        SKIP_CERT=true
+    fi
+else
+    ACME_FORCE=""
+fi
+
 # 生成证书
-log "正在生成证书..." "${BLUE}"
-"$ACME_SH" --issue --dns dns_cf -d $FULL_DOMAIN || { log "生成证书失败" "${RED}"; exit 1; }
+if [ "$SKIP_CERT" != "true" ]; then
+    log "正在生成证书..." "${BLUE}"
+    "$ACME_SH" --issue --dns dns_cf -d $FULL_DOMAIN $ACME_FORCE
+    if [ $? -eq 0 ]; then
+        log "证书生成成功" "${GREEN}"
+    else
+        log "证书生成失败，但将继续尝试安装现有证书（如果存在）" "${YELLOW}"
+    fi
+else
+    log "使用现有证书。" "${GREEN}"
+fi
 
 # 创建证书目录
 mkdir -p /etc/nginx/ssl
@@ -121,13 +146,16 @@ mkdir -p /etc/nginx/ssl
 log "正在安装证书..." "${BLUE}"
 "$ACME_SH" --install-cert -d $FULL_DOMAIN \
     --key-file /etc/nginx/ssl/$FULL_DOMAIN.key  \
-    --fullchain-file /etc/nginx/ssl/$FULL_DOMAIN.crt || { log "安装证书失败" "${RED}"; exit 1; }
+    --fullchain-file /etc/nginx/ssl/$FULL_DOMAIN.crt
 
-# 输出证书路径和完整的域名
-log "证书生成和安装成功！" "${GREEN}"
-log "证书路径：" "${GREEN}"
-log "密钥文件：/etc/nginx/ssl/$FULL_DOMAIN.key" "${GREEN}"
-log "证书文件：/etc/nginx/ssl/$FULL_DOMAIN.crt" "${GREEN}"
-log "完整域名：$FULL_DOMAIN" "${GREEN}"
+if [ $? -eq 0 ]; then
+    log "证书安装成功！" "${GREEN}"
+    log "证书路径：" "${GREEN}"
+    log "密钥文件：/etc/nginx/ssl/$FULL_DOMAIN.key" "${GREEN}"
+    log "证书文件：/etc/nginx/ssl/$FULL_DOMAIN.crt" "${GREEN}"
+    log "完整域名：$FULL_DOMAIN" "${GREEN}"
+else
+    log "证书安装失败。请检查 acme.sh 的输出以获取更多信息。" "${RED}"
+fi
 
 log "脚本执行完毕，祝您使用愉快！" "${PURPLE}"
