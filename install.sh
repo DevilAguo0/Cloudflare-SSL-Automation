@@ -28,6 +28,7 @@ fi
 
 # 安装确认
 read -p "是否安装 Yord SSL Setup? (y/n) " -n 1 -r
+echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "安装已取消。"
     exit 1
