@@ -49,19 +49,47 @@ for pkg in socat jq; do
     fi
 done
 
-# 安装 acme.sh
-ACME_SH="/root/.acme.sh/acme.sh"
-if [ ! -f "$ACME_SH" ]; then
+# 检查并安装 acme.sh
+install_acme() {
     log "正在安装 acme.sh..." "${BLUE}"
     curl https://get.acme.sh | sh -s email=$CF_Email
-    sleep 5
+    source ~/.bashrc
+}
+
+# 检查 acme.sh 是否已安装
+ACME_SH="/root/.acme.sh/acme.sh"
+HIDDIFY_ACME="/opt/hiddify-manager/acme.sh/lib/acme.sh"
+
+if [ -f "$ACME_SH" ]; then
+    log "acme.sh 已安装在 $ACME_SH" "${GREEN}"
+elif [ -f "$HIDDIFY_ACME" ]; then
+    log "acme.sh 已安装在 $HIDDIFY_ACME" "${BLUE}"
+    mkdir -p /root/.acme.sh
+    ln -sf "$HIDDIFY_ACME" "$ACME_SH"
+    if [ -f "$ACME_SH" ]; then
+        log "已创建符号链接到 $ACME_SH" "${GREEN}"
+    else
+        log "创建符号链接失败，尝试复制文件" "${YELLOW}"
+        cp "$HIDDIFY_ACME" "$ACME_SH"
+        if [ -f "$ACME_SH" ]; then
+            log "已复制 acme.sh 到 $ACME_SH" "${GREEN}"
+        else
+            log "复制 acme.sh 失败" "${RED}"
+            install_acme
+        fi
+    fi
+else
+    install_acme
 fi
 
-# 确保 acme.sh 可用
+# 再次检查 acme.sh 是否可用
 if [ ! -f "$ACME_SH" ]; then
-    log "acme.sh 安装失败或无法找到。请手动安装并确保它在 /root/.acme.sh/acme.sh 路径下。" "${RED}"
+    log "acme.sh 安装失败或无法找到。请手动安装并确保它在 $ACME_SH 路径下。" "${RED}"
     exit 1
 fi
+
+# 确保 acme.sh 是可执行的
+chmod +x "$ACME_SH"
 
 # 配置 Cloudflare API
 export CF_Email
