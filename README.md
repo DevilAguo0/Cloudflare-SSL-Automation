@@ -23,7 +23,7 @@
 1. 在服务器上运行以下命令：
 
    ```bash
-   bash <(curl -s https://raw.githubusercontent.com/DevilAguo0/Cloudflare-SSL-Automation/main/cloudfare_ssl.sh)
+   bash <(curl -s https://raw.githubusercontent.com/YordYI/Cloudflare-SSL-Automation/main/cloudfare_ssl.sh)
    ```
 
 2. 按照提示输入必要的信息（Cloudflare 邮箱、API 密钥、域名等）。
