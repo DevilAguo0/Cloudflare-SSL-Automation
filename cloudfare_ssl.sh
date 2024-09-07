@@ -65,6 +65,15 @@ load_config() {
     return 1
 }
 
+# 检查IP地址类型
+check_ip_type() {
+    if [[ $1 =~ .*:.* ]]; then
+        echo "IPv6"
+    else
+        echo "IPv4"
+    fi
+}
+
 # 检查必要的命令
 check_command curl
 check_command jq
@@ -100,7 +109,7 @@ get_subdomain() {
         FULL_DOMAIN="${SUBDOMAIN}.${DOMAIN}"
         
         # 检查记录是否已存在
-        EXISTING_RECORD=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$FULL_DOMAIN" \
+        EXISTING_RECORD=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$FULL_DOMAIN" \
              -H "X-Auth-Email: $CF_Email" \
              -H "X-Auth-Key: $CF_Key" \
              -H "Content-Type: application/json")
@@ -108,7 +117,7 @@ get_subdomain() {
         RECORD_ID=$(echo $EXISTING_RECORD | jq -r '.result[0].id')
         
         if [ "$RECORD_ID" != "null" ] && [ -n "$RECORD_ID" ]; then
-            log "A 记录 $FULL_DOMAIN 已存在。请输入一个不同的二级域名。" "${YELLOW}"
+            log "DNS 记录 $FULL_DOMAIN 已存在。请输入一个不同的二级域名。" "${YELLOW}"
         else
             break
         fi
@@ -143,25 +152,32 @@ ZONE_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$DOMAI
 [ -z "$ZONE_ID" ] || [ "$ZONE_ID" == "null" ] && error_exit "错误：无法获取 Zone ID，请检查域名和 API 凭证。"
 
 # 获取服务器 IP
-SERVER_IP=$(curl -s ifconfig.me)
+SERVER_IP=$(curl -s https://api64.ipify.org)
 [ -z "$SERVER_IP" ] && error_exit "错误：无法获取服务器 IP"
-log "服务器 IP: $SERVER_IP" "${GREEN}"
+IP_TYPE=$(check_ip_type "$SERVER_IP")
+log "服务器 IP: $SERVER_IP (${IP_TYPE})" "${GREEN}"
 
-# 获取二级域名并创建 A 记录
+# 获取二级域名并创建 DNS 记录
 get_subdomain
 
-# 创建 A 记录
-log "正在创建 A 记录..." "${BLUE}"
+# 创建 DNS 记录
+log "正在创建 DNS 记录..." "${BLUE}"
+if [ "$IP_TYPE" == "IPv6" ]; then
+    RECORD_TYPE="AAAA"
+else
+    RECORD_TYPE="A"
+fi
+
 RECORD_RESPONSE=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
      -H "X-Auth-Email: $CF_Email" \
      -H "X-Auth-Key: $CF_Key" \
      -H "Content-Type: application/json" \
-     --data "{\"type\":\"A\",\"name\":\"$FULL_DOMAIN\",\"content\":\"$SERVER_IP\",\"ttl\":1,\"proxied\":false}")
+     --data "{\"type\":\"$RECORD_TYPE\",\"name\":\"$FULL_DOMAIN\",\"content\":\"$SERVER_IP\",\"ttl\":1,\"proxied\":false}")
 
 if echo "$RECORD_RESPONSE" | jq -e '.success' &>/dev/null; then
-    log "A 记录创建成功" "${GREEN}"
+    log "${RECORD_TYPE} 记录创建成功" "${GREEN}"
 else
-    error_exit "错误：A 记录创建失败。错误信息：\n$(echo "$RECORD_RESPONSE" | jq '.errors')"
+    error_exit "错误：${RECORD_TYPE} 记录创建失败。错误信息：\n$(echo "$RECORD_RESPONSE" | jq '.errors')"
 fi
 
 # 生成证书
